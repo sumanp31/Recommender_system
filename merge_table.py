@@ -1,55 +1,53 @@
 import pandas as pd
+import numpy as np
+import time
+
+st = time.time()
 
 artists= pd.read_csv("artists.csv")
 col = artists.columns
 artists= pd.read_csv("artists.csv", usecols=col[0:2])
-artists.columns = ['artistID', 'name']
-artists.index = artists['artistID'].values
-artists.drop('artistID',axis=1,inplace=True)
-
+artists.index = artists['id'].values
+artists.drop('id',axis=1,inplace=True)
 
 ## Assigning tags as columns
 tags = pd.read_csv('tags.csv')
 tagIDlist = tags['tagID'].values
-
-for i in tagIDlist:
-	artists['tag' + str(i)] = 0
+artists = pd.concat([artists,pd.DataFrame(columns=tagIDlist)])
+artists[tagIDlist] = 0
 
 user_taggedartists = pd.read_csv('user_taggedartists.csv', usecols=['userID', 'artistID','tagID'])
-
+df =  user_taggedartists.groupby('artistID')['tagID'].apply(list)
 ## Assigning values to the tag columns
-print (len(user_taggedartists['userID'].unique()))
-for u in user_taggedartists['userID'].unique():
-	print(u)
-	temp = [x for x in user_taggedartists.index if user_taggedartists['userID'][x] == u]
-	df = user_taggedartists.iloc[temp]
-	gf = df.groupby('artistID')['tagID'].apply(list)
+print (len(user_taggedartists['artistID'].unique()))
+# print (user_taggedartists['artistID'].unique())
+print("--- %s seconds ---" % (time.time() - st))
 
-	for i in df['artistID'].unique():
-		for j in range(len(gf[i])):
-			artists['tag' + str(gf[i][j])][i] = 1
+rows = list(set(artists.index).intersection(user_taggedartists['artistID'].unique()))
+# print (len(rows))
+temp = [(1 if t in df[u] else 0) for u in rows for t in tagIDlist]
+artists.loc[rows,tagIDlist] = np.reshape(temp, (len(rows), len(tagIDlist)))
+print("--- %s seconds ---" % (time.time() - st))
 
+
+artists.columns = ['name'] + ["tag" + str(i)for i in artists.columns  if type(i) == int]
 
 ## Assigning users as columns
 
-user_artists = pd.read_csv('user_artists.csv' )
-
+user_artists = pd.read_csv('user_artists.csv')
 userIDlist = user_artists['userID'].unique()
 
+artists = pd.concat([artists,pd.DataFrame(columns=userIDlist)])
+artists[userIDlist] = 0
 
-for i in userIDlist:
-	artists['user' + str(i)] = 0
+df2 = user_artists.groupby('artistID')['userID'].apply(list)
+wt = user_artists.groupby('artistID')['weight'].apply(list)
 
-## Assigning values to the user columns
-print (len(userIDlist))
-for u in userIDlist:
-	print (u)
-	temp = [x for x in user_artists.index if user_artists['userID'][x] == u]
-	for i in temp:
-		artists['user' + str(u)][user_artists['artistID'][i]] = user_artists['weight'][i]
+rows2 = list(set(artists.index).intersection(user_artists['artistID'].unique()))
+artists.loc[rows2,userIDlist] = (np.reshape([wt[u][df2[u].index(i)] if i in df2[u] else 0 for u in rows2 for i in userIDlist],(len(rows2),len(userIDlist))))
 
-artists = artists.loc[:, (artists != 0).any(axis=0)]
-print (artists)
+artists.columns = [('user' + str(artists.columns[i]) if type(artists.columns[i]) == int else artists.columns[i]) for i in range(len(artists.columns))]
 
 
+print("--- %s seconds ---" % (time.time() - st))
 artists.to_csv("Merged_table.csv")
